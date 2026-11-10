@@ -1,4 +1,4 @@
-"""Package only the files Chrome needs; never include settings or credentials."""
+"""Package the extension and its license; never include settings or credentials."""
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 
@@ -9,4 +9,5 @@ with ZipFile(output, 'w', ZIP_DEFLATED) as archive:
     for file in sorted((root / 'extension').rglob('*')):
         if file.is_file():
             archive.write(file, file.relative_to(root / 'extension'))
+    archive.write(root / 'LICENSE', 'LICENSE')
 print(output)

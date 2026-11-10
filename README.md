@@ -3,6 +3,8 @@
 PLaMo 3 Translate 向けの Chrome 拡張です。  
 OpenAI 互換 API を使い、前後の文脈を参照して Web ページを翻訳します。
 
+このリポジトリのコードは [MIT License](LICENSE) で公開しています。PLaMo 自体のライセンスについては、[公式のライセンス説明](https://huggingface.co/pfnet/plamo-3-translate-8b#license)を確認してください。
+
 ## 主な機能
 
 - 原文の下に併記：段落や見出しごとに訳文を追加します。
