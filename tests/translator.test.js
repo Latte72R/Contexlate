@@ -2,14 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Translator, splitText, requestBody, CHUNK_SIZE, INPUT_BYTE_LIMIT, clipUtf8 } from '../extension/translator.js';
 import { DEFAULTS, validateSettings, originPattern } from '../extension/shared.js';
-const config = { ...DEFAULTS, apiKey: 'test-only-key' };
+const config = { ...DEFAULTS, endpoint: 'https://example.com/v1', apiKey: 'test-only-key' };
 const json = (text = '翻訳結果', finish_reason = 'stop') => Response.json({ choices: [{ message: { content: text }, finish_reason }] });
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 
 test('settings validate endpoint, languages, and avoid credentials in URL', () => {
   assert.equal(validateSettings(config).model, 'plamo-3-translate');
-  assert.equal(validateSettings({}).mode, 'replace');
-  assert.equal(validateSettings({ mode: 'bilingual' }).mode, 'bilingual');
+  assert.throws(() => validateSettings(DEFAULTS), /API URL/);
+  assert.equal(validateSettings({}, { allowEmptyEndpoint: true }).endpoint, '');
+  assert.throws(() => validateSettings({ endpoint: 'invalid' }, { allowEmptyEndpoint: true }), /API URL/);
+  assert.equal(validateSettings({}, { allowEmptyEndpoint: true }).mode, 'replace');
+  assert.equal(validateSettings({ ...config, mode: 'bilingual' }).mode, 'bilingual');
   for (const endpoint of ['file:///tmp/a', 'https://user:secret@example.com/v1/chat/completions', 'https://example.com/invalid', 'https://example.com/v1?key=secret']) {
     assert.throws(() => validateSettings({ ...config, endpoint }));
   }
@@ -91,7 +94,7 @@ test('errors never leak server bodies or key; truncation is rejected', async () 
   const translator = new Translator(async () => new Response('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n', { headers: { 'content-type': 'text/event-stream' } }));
   await assert.rejects(translator.translate('Hello', config, 'a'), /途中/);
 });
-test('a global eight-request limit applies across owners', async () => {
+test('a global single-request limit applies across owners', async () => {
   let active = 0, maximum = 0;
   const translator = new Translator(async () => {
     active++; maximum = Math.max(maximum, active);
@@ -99,7 +102,7 @@ test('a global eight-request limit applies across owners', async () => {
     active--; return json();
   });
   await Promise.all(Array.from({ length: 13 }, (_, i) => translator.translate(`Text ${i}`, config, `owner-${i}`)));
-  assert.equal(maximum, 8);
+  assert.equal(maximum, 1);
   assert.equal(translator.active, 0);
   assert.equal(translator.tasks.size, 0);
 });
@@ -114,7 +117,7 @@ test('cancel removes queued work, aborts active work, and frees slots', async ()
   await tick(); translator.cancel('a');
   const results = await settled;
   assert.ok(results.every(result => result.status === 'rejected'));
-  assert.equal(fetched, 8);
+  assert.equal(fetched, 1);
   assert.equal(translator.active, 0);
   assert.equal(translator.queue.length, 0);
   translator.fetch = async () => json('works again');
@@ -128,7 +131,7 @@ test('long translation preserves separators and requires a key', async () => {
 });
 
 test('parallel setting defaults for existing installs and rejects invalid limits', () => {
-  assert.equal(validateSettings({}).maxParallelRequests, '8');
+  assert.equal(validateSettings({}, { allowEmptyEndpoint: true }).maxParallelRequests, '1');
   for (const value of ['0', '65', '1.5', '', '-1', 'NaN']) {
     assert.throws(() => validateSettings({ ...config, maxParallelRequests: value }), /並列/);
   }

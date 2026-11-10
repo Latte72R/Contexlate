@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="45 96 400 400" width="512" height="512"><defs>
+ <linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#69e6dc"/><stop offset=".5" stop-color="#43b5e2"/><stop offset="1" stop-color="#8a76e5"/></linearGradient>
+ <linearGradient id="p" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#c6aaef"/><stop offset="1" stop-color="#8b81e3"/></linearGradient>
+ <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="11"/></filter>
+ </defs>
+ <ellipse cx="256" cy="452" rx="149" ry="18" fill="#081e38" opacity=".22" filter="url(#shadow)"/>
+ <g stroke-linejoin="round" stroke-width="8">
+ <rect x="90" y="112" width="270" height="303" rx="32" fill="#dff7ff" stroke="#fff"/>
+ <path d="M140 175H310M140 217H287M140 258H245" stroke="#92bdcc" stroke-width="17" stroke-linecap="round"/>
+ <rect x="154" y="157" width="269" height="303" rx="32" fill="url(#g)" stroke="#c2ffff"/>
+ <path d="M205 229h170M205 271h126M205 312h150" stroke="#e3fbff" opacity=".67" stroke-width="17" stroke-linecap="round"/>
+ </g>
+ <circle cx="136" cy="345" r="68" fill="#123c60" stroke="#b6fcf4" stroke-width="9"/>
+ <path d="M163 319q-20-23-43 1t0 47" fill="none" stroke="#e2fcff" stroke-width="14" stroke-linecap="round"/>
+ <path d="M104 359l17 14 14-18" fill="none" stroke="#e2fcff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+ <path d="M321 365l36 0m-14-14 14 14-14 14" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

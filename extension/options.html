@@ -1,16 +1,29 @@
 <!doctype html>
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>設定 · Contexlate</title><link rel="stylesheet" href="ui.css"></head>
-<body><main>
-<header><div class="brand"><img src="icons/48.png" alt=""><div><h1>翻訳の設定</h1><p class="sub">Contexlate</p></div></div></header>
-<p>翻訳 API に接続して、お好みの言語でページを読みます。</p>
-<form id="form"><label class="field" for="endpoint">API ベース URL</label><input type="url" id="endpoint" required spellcheck="false"><small class="help">https://llm.keioaic.dev/v1 まで入力してください。接続先を変更すると Chrome がアクセス許可を求めます。</small>
-<label class="field" for="apiKey">API キー</label><input type="password" id="apiKey" required autocomplete="off" spellcheck="false"><small class="help">KEIOAIC_LLM_API_KEY の値を入力します。このブラウザー内に保存し、Chrome の同期には送りません。</small>
-<label class="field" for="model">モデル名</label><input type="text" id="model" required maxlength="200" spellcheck="false">
-<label class="field" for="maxParallelRequests">モデルへの並列アクセス数</label><input type="number" id="maxParallelRequests" min="1" max="64" step="1" required><small class="help">既定は 8。複数タブと選択文翻訳を合わせた上限です。サーバーの処理能力に合わせて指定してください。</small>
-<label class="field" for="targetLang">既定の翻訳先</label><select id="targetLang"></select>
-<label class="field" for="mode">既定の表示方法</label><select id="mode"><option value="bilingual">原文の下に併記</option><option value="replace" selected>ページ全体を翻訳</option></select>
+<html lang="ja">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>設定 · Contexlate</title><link rel="stylesheet" href="ui.css"></head>
+<body class="options"><main>
+<header><div class="brand"><img src="icons/logo.svg" alt=""><span class="wordmark">Contexlate</span></div></header>
+<h1 class="page-heading">翻訳の設定</h1>
+<p class="intro">翻訳APIの接続先と、ページを読むときの表示方法を設定します。</p>
+<form id="form">
+<fieldset class="settings-group"><legend>APIへの接続</legend><div class="fields">
+<div><label class="field" for="endpoint">API ベース URL</label><input class="technical" type="url" id="endpoint" placeholder="https://example.com/v1" required spellcheck="false" aria-describedby="endpointHelp"><small class="help" id="endpointHelp">/v1 までのURLを入力してください。接続先の変更時はChromeがアクセス許可を求めます。</small></div>
+<div><label class="field" for="apiKey">API キー</label><input type="password" id="apiKey" required autocomplete="off" spellcheck="false" aria-describedby="apiKeyHelp"><small class="help" id="apiKeyHelp">このブラウザー内に保存します。Chromeの同期には送りません。</small></div>
+<div class="field-row">
+<div><label class="field" for="model">モデル名</label><input class="technical" type="text" id="model" required maxlength="200" spellcheck="false"></div>
+<div><label class="field" for="maxParallelRequests">並列アクセス数</label><input type="number" id="maxParallelRequests" min="1" max="64" step="1" required aria-describedby="parallelHelp"></div>
+</div>
+<small class="help" id="parallelHelp">並列数は1〜64、既定は1。複数タブ・選択文翻訳を合わせた上限です。サーバーの処理能力に合わせて指定してください。</small>
+</div></fieldset>
+<fieldset class="settings-group"><legend>翻訳と表示</legend><div class="field-row equal">
+<div><label class="field" for="targetLang">既定の翻訳先</label><select id="targetLang"></select></div>
+<div><label class="field" for="mode">既定の表示方法</label><select id="mode"><option value="bilingual">原文の下に併記</option><option value="replace" selected>ページ全体を翻訳</option></select></div>
+</div></fieldset>
 <div class="actions"><button class="primary" type="submit" id="save">保存</button><button class="secondary" type="button" id="test">保存して接続テスト</button></div>
-<p><button class="secondary" type="button" id="clearCache">翻訳キャッシュを削除</button></p><small class="help">訳文をこのブラウザー内に最大200件・2 MiB保存します。接続テストはキャッシュを使いません。</small>
-<p class="status" id="status" role="status" aria-live="polite"></p></form>
-<div class="note">翻訳したいページで拡張アイコンを押すと、そのページのテキストを API に送信します。選択文翻訳では選択した文字だけを送信します。入力中のフォーム値、パスワード、コードブロックはページ翻訳の対象外です。API キーは暗号化された保管庫ではなく、拡張専用ストレージに保存されます。</div>
-</main><script type="module" src="options.js"></script></body></html>
+<div class="cache"><button class="secondary" type="button" id="clearCache">翻訳キャッシュを削除</button><small class="help">訳文を最大200件・2 MiBまで保存します。接続テストではキャッシュを使わずAPIへ接続します。</small></div>
+<p class="status" id="status" role="status" aria-live="polite"></p>
+</form>
+<div class="note">ページ翻訳では本文と参照文脈を、選択文翻訳では選択した文字だけをAPIに送信します。入力中のフォーム値、パスワード、コードブロックは対象外です。APIキーはブラウザのローカルストレージに保存されます。</div>
+<footer><div class="legal"><span>© 2026 Latte72</span><span aria-hidden="true">·</span><a href="https://github.com/Latte72R/Contexlate/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" aria-label="MITライセンスを開く">MIT License</a></div></footer>
+</main><script type="module" src="options.js"></script></body>
+</html>

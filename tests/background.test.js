@@ -21,7 +21,11 @@ const untrusted = { id: 'test-extension', url: 'https://example.com/', tab: { id
 const send = (message, sender = trusted) => new Promise(resolve => listeners.message(message, sender, resolve));
 
 test('only extension pages may access secrets or change settings', async () => {
-  const value = { ...DEFAULTS, apiKey: 'never-expose-this' };
+  const initial = (await send({ type: 'settings' })).settings;
+  assert.equal(initial.endpoint, '');
+  assert.equal(initial.maxParallelRequests, '1');
+  assert.equal((await send({ type: 'saveSettings', settings: { ...DEFAULTS, apiKey: 'test-only-key' } })).ok, false);
+  const value = { ...DEFAULTS, endpoint: 'https://example.com/v1', apiKey: 'never-expose-this' };
   assert.equal((await send({ type: 'saveSettings', settings: value })).ok, true);
   const publicSettings = (await send({ type: 'settings' }, untrusted)).settings;
   assert.deepEqual(Object.keys(publicSettings).sort(), ['mode', 'targetLang']);

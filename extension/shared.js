@@ -1,10 +1,10 @@
 export const DEFAULTS = Object.freeze({
-  endpoint: 'https://llm.keioaic.dev/v1',
+  endpoint: '',
   apiKey: '',
   model: 'plamo-3-translate',
   targetLang: 'ja',
   mode: 'replace',
-  maxParallelRequests: '8',
+  maxParallelRequests: '1',
 });
 export const LANGUAGES = {
   ja: '日本語', en: '英語', 'zh-hans': '中国語（簡体字）', 'zh-hant': '中国語（繁体字）',
@@ -12,17 +12,20 @@ export const LANGUAGES = {
   ru: 'ロシア語', ar: 'アラビア語', vi: 'ベトナム語', th: 'タイ語',
   id: 'インドネシア語', nl: 'オランダ語', hi: 'ヒンディー語',
 };
-export function validateSettings(value) {
+export function validateSettings(value, { allowEmptyEndpoint = false } = {}) {
   const settings = Object.fromEntries(Object.keys(DEFAULTS).map(key => [key, value[key] ?? DEFAULTS[key]]));
   if (Object.values(settings).some(value => typeof value !== 'string')) throw new Error('設定の形式が正しくありません。');
-  let url;
-  try { url = new URL(settings.endpoint.trim()); } catch { throw new Error('API URL が正しくありません。'); }
-  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-    throw new Error('API URL は認証情報・クエリを含まない HTTP(S) URL を指定してください。');
+  settings.endpoint = settings.endpoint.trim();
+  if (settings.endpoint || !allowEmptyEndpoint) {
+    let url;
+    try { url = new URL(settings.endpoint.trim()); } catch { throw new Error('API URL が正しくありません。'); }
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+      throw new Error('API URL は認証情報・クエリを含まない HTTP(S) URL を指定してください。');
+    }
+    url.pathname = url.pathname.replace(/\/+$/, '').replace(/\/chat\/completions$/, '');
+    if (!url.pathname.endsWith('/v1')) throw new Error('API URL は https://example.com/v1 のように /v1 まで入力してください。');
+    settings.endpoint = url.href;
   }
-  url.pathname = url.pathname.replace(/\/+$/, '').replace(/\/chat\/completions$/, '');
-  if (!url.pathname.endsWith('/v1')) throw new Error('API URL は https://llm.keioaic.dev/v1 のように /v1 まで入力してください。');
-  settings.endpoint = url.href;
   settings.apiKey = settings.apiKey.trim();
   settings.model = settings.model.trim();
   if (!settings.model || settings.model.length > 200) throw new Error('モデル名を入力してください。');

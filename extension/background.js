@@ -11,7 +11,7 @@ const isExtensionPage = sender => sender.url?.startsWith(extensionOrigin);
 async function settings() {
   await storageReady;
   const stored = await chrome.storage.local.get('settings');
-  const config = validateSettings({ ...DEFAULTS, ...stored.settings });
+  const config = validateSettings({ ...DEFAULTS, ...stored.settings }, { allowEmptyEndpoint: true });
   translator.setConcurrency(Number(config.maxParallelRequests));
   return config;
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { TranslationCache, translationCacheKey, CACHE_MAX_ENTRIES, CACHE_MAX_BYTES } from '../extension/cache.js';
 import { Translator } from '../extension/translator.js';
 import { DEFAULTS } from '../extension/shared.js';
-const config = { ...DEFAULTS, apiKey: 'cache-test-key' };
+const config = { ...DEFAULTS, endpoint: 'https://example.com/v1', apiKey: 'cache-test-key' };
 function storage() {
   const data = {};
   return { data, get: async key => structuredClone({ [key]: data[key] }), set: async value => Object.assign(data, structuredClone(value)) };

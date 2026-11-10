@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { DEFAULTS } from '../extension/shared.js';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root = fileURLToPath(new URL('../', import.meta.url));
+await mkdir(join(root, 'test-results'), { recursive: true });
 const temp = await mkdtemp(join(tmpdir(), 'plamo-test-'));
 const requests = [];
 let active = 0, maximum = 0, delay = 5, failure = false;
@@ -76,10 +77,13 @@ try {
   await options.goto(`chrome-extension://${id}/options.html`);
   await options.waitForFunction(() => document.getElementById('model').value === 'plamo-3-translate');
   assert.equal(await options.locator('#targetLang option[value=en]').textContent(), '英語');
+  assert.equal(await options.locator('.brand .wordmark').textContent(), 'Contexlate');
+  assert.equal(await options.getByRole('heading', { level: 1 }).textContent(), '翻訳の設定');
   assert.equal(requests.length, 0);
+  assert.equal(await options.locator('#endpoint').inputValue(), '');
   await options.locator('#endpoint').fill(`${endpoint}/v1/`);
   await options.locator('#apiKey').fill('test-only-key');
-  assert.equal(await options.locator('#maxParallelRequests').inputValue(), '8');
+  assert.equal(await options.locator('#maxParallelRequests').inputValue(), '1');
   await options.locator('#maxParallelRequests').fill('6');
   await options.locator('#test').click();
   await options.waitForFunction(() => document.getElementById('status').textContent.includes('接続できました'), null, { timeout: 10000 }).catch(async error => {
@@ -138,6 +142,7 @@ try {
   let state = await complete();
   await checkProgress(state);
   assert.equal(state.errors, 0); assert.equal(state.done, state.total);
+  await page.screenshot({ path: join(root, 'test-results/page-panel.png'), fullPage: true });
   assert.ok(await page.locator('[data-plamo-ui=translation]').count() > 5);
   assert.equal(await page.locator('#intro strong').textContent(), 'world');
   const pageRequests = requests.slice(firstPageRequest).map(request => request.messages[0].content);
@@ -192,15 +197,33 @@ try {
   await selection.goto(`chrome-extension://${id}/selection.html?id=${selectionId}`);
   await selection.waitForFunction(() => document.getElementById('status').textContent.includes('翻訳できました'));
   assert.equal(await selection.locator('#translation').textContent(), '訳：Selected text only');
+  assert.equal(await selection.locator('#copy').getAttribute('class'), 'primary');
+  assert.equal(await selection.locator('#copy').evaluate(node => getComputedStyle(node).color), 'rgb(255, 255, 255)');
+  assert.ok(await selection.locator('#copy').isEnabled());
+  assert.equal(await selection.locator('#retry').getAttribute('class'), 'secondary');
   assert.equal(await selection.locator('#targetLang option[value=fr]').textContent(), 'フランス語');
-  await mkdir(join(root, 'test-results'), { recursive: true });
+  for (const screen of [options, selection]) {
+    assert.match(await screen.locator('.legal').textContent(), /© 2026 Latte72/);
+    assert.equal(await screen.getByRole('link', { name: 'MITライセンスを開く' }).getAttribute('href'), 'https://github.com/Latte72R/Contexlate/blob/main/LICENSE');
+    assert.ok(await screen.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Extension UI must fit its viewport');
+  }
   await selection.screenshot({ path: join(root, 'test-results/selection.png') });
   await options.screenshot({ path: join(root, 'test-results/options.png'), fullPage: true });
+  await options.setViewportSize({ width: 360, height: 780 });
+  assert.ok(await options.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Settings must fit narrow windows');
+  await options.screenshot({ path: join(root, 'test-results/options-mobile.png'), fullPage: true });
+  await options.setViewportSize({ width: 1280, height: 900 });
   await selection.close();
   const popup = await context.newPage();
-  await popup.setViewportSize({ width: 350, height: 620 });
+  await popup.setViewportSize({ width: 400, height: 600 });
   await popup.goto(`chrome-extension://${id}/popup.html`);
   await popup.waitForFunction(() => document.getElementById('targetLang').value === 'ja');
+  assert.match(await popup.locator('.legal').textContent(), /© 2026 Latte72/);
+  assert.ok(await popup.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  assert.ok(await popup.evaluate(() => document.body.scrollHeight <= 600), 'Popup must fit Chrome popup height without scrolling in its idle state');
+  await popup.locator('input[value=replace]').focus();
+  assert.equal(await popup.locator('input[value=replace]').evaluate(node => getComputedStyle(node.closest('label')).outlineStyle), 'solid');
+  await popup.locator('input[value=replace]').blur();
   await popup.screenshot({ path: join(root, 'test-results/popup.png') });
   await page.reload();
   const originalIntro = await page.locator('#intro').innerHTML();
@@ -329,7 +352,8 @@ try {
   if (process.env.PLAMO_LIVE_TEST === '1') {
     assert.ok(process.env.KEIOAIC_LLM_API_KEY, 'KEIOAIC_LLM_API_KEY is required for the live test');
     await options.locator('#maxParallelRequests').fill('4');
-    await options.locator('#endpoint').fill(DEFAULTS.endpoint);
+    assert.ok(process.env.PLAMO_API_BASE, 'PLAMO_API_BASE is required for the live test');
+    await options.locator('#endpoint').fill(process.env.PLAMO_API_BASE);
     await options.locator('#apiKey').fill(process.env.KEIOAIC_LLM_API_KEY);
     await options.locator('#test').click();
     await options.waitForFunction(() => document.getElementById('status').textContent.includes('接続できました'), null, { timeout: 120000 });

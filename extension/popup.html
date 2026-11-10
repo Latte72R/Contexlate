@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Contexlate</title><link rel="stylesheet" href="ui.css"></head>
 <body class="popup"><main>
-<header><div class="brand"><img src="icons/48.png" alt=""><div><h1>Contexlate</h1><p class="sub">ページを、いつもの言葉で。</p></div></div><button class="link" id="settings">設定</button></header>
+<header><div class="brand"><img src="icons/logo.svg" alt=""><div><h1>Contexlate</h1><p class="sub">文脈を参照するページ翻訳</p></div></div><button class="link" id="settings">設定</button></header>
 <label class="field" for="targetLang">翻訳先</label><select id="targetLang"></select>
 <fieldset class="modes"><legend>表示方法</legend>
 <label class="mode"><input type="radio" name="mode" value="bilingual"><span><strong>原文の下に併記</strong><small>原文を読みながら訳文を確認</small></span></label>
@@ -10,5 +10,5 @@
 <button class="primary wide" id="translate" disabled>このページを翻訳</button>
 <div class="actions"><button class="secondary" id="stop" disabled>中止</button><button class="secondary" id="restore" disabled>原文に戻す</button></div>
 <progress id="progress" aria-label="翻訳の進捗" aria-describedby="status" hidden></progress><p class="status" id="status" role="status" aria-live="polite"></p>
-<footer>一部分だけなら、文字を選択して右クリック。</footer>
+<footer><p>一部分だけなら、文字を選択して右クリック</p><div class="legal"><span>© 2026 Latte72</span><span aria-hidden="true">·</span><a href="https://github.com/Latte72R/Contexlate/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" aria-label="MITライセンスを開く">MIT License</a></div></footer>
 </main><script type="module" src="popup.js"></script></body></html>

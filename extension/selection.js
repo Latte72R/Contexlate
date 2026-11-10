@@ -7,6 +7,7 @@ async function translate() {
   const current = ++generation;
   $('retry').disabled = $('targetLang').disabled = true;
   $('stop').disabled = false; $('copy').disabled = true;
+  $('retry').className = 'primary'; $('copy').className = 'secondary';
   $('translation').textContent = '';
   status('翻訳中…');
   try {
@@ -14,6 +15,7 @@ async function translate() {
     if (current !== generation) return;
     $('translation').textContent = result.text;
     $('copy').disabled = false;
+    $('copy').className = 'primary'; $('retry').className = 'secondary';
     status('翻訳できました。');
   } catch (error) { if (current === generation) status(error.message, true); }
   finally {

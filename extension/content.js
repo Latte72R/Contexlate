@@ -181,7 +181,15 @@
     panel.style.cssText = 'all:initial!important;position:fixed!important;left:20px!important;bottom:20px!important;z-index:2147483647!important;display:block!important;';
     ui = panel.attachShadow({ mode: 'closed' });
     const style = document.createElement('style');
-    style.textContent = ':host{color-scheme:light}section{font:14px/1.5 system-ui,sans-serif;background:#fff;color:#20302c;border:1px solid #c7d7ce;border-radius:12px;box-shadow:0 6px 25px #0002;padding:14px 16px;width:300px;max-width:calc(100vw - 72px)}strong{font-size:13px;color:#23624d}p{margin:6px 0 10px;overflow-wrap:anywhere}progress{width:100%;height:8px;margin:0 0 12px;accent-color:#23624d}nav{display:flex;gap:8px}button{font:inherit;border:1px solid #c7d7ce;background:#f4f7f4;border-radius:6px;color:#20302c;padding:5px 10px;cursor:pointer}button:focus-visible{outline:3px solid #23624d}button:disabled{opacity:.5;cursor:default}';
+    style.textContent = `
+      :host{color-scheme:light}
+      section{font:16px/1.6 system-ui,sans-serif;background:#f7f8f3;color:#243c32;border:1px solid #d8e1d8;border-radius:12px;box-shadow:0 8px 24px #0000000f;padding:16px;width:320px;max-width:calc(100vw - 40px);box-sizing:border-box}
+      strong{font-size:16px;font-weight:600}p{margin:12px 0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums;white-space:pre-wrap}
+      progress{display:block;width:100%;height:8px;margin:0 0 16px;accent-color:#235b44}
+      nav{display:flex;gap:8px;flex-wrap:wrap}button{font:inherit;font-size:15px;min-height:36px;border:1px solid #d8e1d8;background:#fff;border-radius:8px;color:#243c32;padding:8px 12px;cursor:pointer}
+      button:hover:not(:disabled){background:#edf4ec}button:focus-visible,a:focus-visible{outline:2px solid #235b44;outline-offset:3px}button:disabled{opacity:.5;cursor:default}
+      footer{border-top:1px solid #d8e1d8;margin-top:16px;padding-top:12px;font-size:13px;color:#596b61}a{color:inherit;text-underline-offset:3px}
+    `;
     const section = document.createElement('section');
     section.setAttribute('aria-label', 'Contexlate 翻訳');
     const heading = document.createElement('strong'); heading.textContent = 'Contexlate';
@@ -193,7 +201,15 @@
       const button = document.createElement('button'); button.textContent = label; button.id = id;
       button.addEventListener('click', action); nav.append(button);
     }
-    section.append(heading, status, progress, nav); ui.append(style, section); document.documentElement.append(panel);
+    const footer = document.createElement('footer');
+    footer.append('© 2026 Latte72 · ');
+    const license = document.createElement('a');
+    license.textContent = 'MIT License';
+    license.href = 'https://github.com/Latte72R/Contexlate/blob/main/LICENSE';
+    license.target = '_blank'; license.rel = 'noopener noreferrer';
+    license.setAttribute('aria-label', 'MITライセンスを開く');
+    footer.append(license);
+    section.append(heading, status, progress, nav, footer); ui.append(style, section); document.documentElement.append(panel);
   }
   function update() {
     ensurePanel();
@@ -264,7 +280,7 @@
       additions.push(translation);
     }
   }
-  async function start(mode, targetLang, sourceByteLimit, maxParallelRequests = 8) {
+  async function start(mode, targetLang, sourceByteLimit, maxParallelRequests = 1) {
     if (!['bilingual', 'replace'].includes(mode) || typeof targetLang !== 'string') throw new Error('表示方法と言語を選んでください。');
     restore();
     const current = generation;
