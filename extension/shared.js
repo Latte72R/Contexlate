@@ -3,7 +3,7 @@ export const DEFAULTS = Object.freeze({
   apiKey: '',
   model: 'plamo-3-translate',
   targetLang: 'ja',
-  mode: 'bilingual',
+  mode: 'replace',
   maxParallelRequests: '8',
 });
 export const LANGUAGES = {

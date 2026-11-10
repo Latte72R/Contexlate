@@ -8,6 +8,8 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 
 test('settings validate endpoint, languages, and avoid credentials in URL', () => {
   assert.equal(validateSettings(config).model, 'plamo-3-translate');
+  assert.equal(validateSettings({}).mode, 'replace');
+  assert.equal(validateSettings({ mode: 'bilingual' }).mode, 'bilingual');
   for (const endpoint of ['file:///tmp/a', 'https://user:secret@example.com/v1/chat/completions', 'https://example.com/invalid', 'https://example.com/v1?key=secret']) {
     assert.throws(() => validateSettings({ ...config, endpoint }));
   }
