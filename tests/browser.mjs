@@ -12,6 +12,8 @@ const requests = [];
 let active = 0, maximum = 0, delay = 5, failure = false;
 let markupMode = 'normal';
 let unexpectedResources = 0;
+const boltIdAsHref = JSON.parse(await readFile(join(root, 'tests/fixtures/bolt-id-as-href.json'), 'utf8'));
+const bolt = JSON.parse(await readFile(join(root, 'tests/fixtures/bolt.json'), 'utf8'));
 const fixture = await readFile(join(root, 'tests/fixtures/page.html'));
 const server = createServer(async (req, res) => {
   if (req.url === '/beacon') unexpectedResources++;
@@ -31,12 +33,18 @@ const server = createServer(async (req, res) => {
   if (res.destroyed) return;
   const source = body.messages[0].content;
   let content = source === 'Untrusted content' ? '<img src=x onerror="window.pwned=true">' : source.startsWith('<') ? source.replace(/>([^<]+)</g, (_match, text) => `>訳：${text}<`) : `訳：${source}`;
+  if (source === bolt.source) content = markupMode === 'bolt-id-as-href' ? boltIdAsHref.translation : markupMode === 'bolt-parent'
+    ? bolt.translation.replace('<b id="n0"> <a id="n1">BOLT</a></b>', '<a id="n1"><b id="n0">BOLT</b></a>')
+    : bolt.translation;
   if (source.startsWith('<p>Hello <strong')) {
     if (markupMode === 'unwrapped') content = '詳細は<a id="n1">資料</a>へ。<strong id="n0">世界</strong>、こんにちは。';
     if (markupMode === 'reorder') content = '<p>詳細は<a id="n1">資料</a>へ。<strong id="n0">世界</strong>、こんにちは。</p>';
     if (markupMode === 'missing') content = '<p>リンクを失った訳文。</p>';
     if (markupMode === 'attribute') content = '<p><strong id="n0">世界</strong><a id="n1" href="javascript:alert(1)">資料</a></p>';
     if (markupMode === 'script') content = '<p><strong id="n0">世界</strong><a id="n1">資料</a><script>window.pwned=true</script></p>';
+    if (markupMode === 'href-duplicate') content = '<p><strong id="n0">世界</strong><a href="n1">資料</a><a href="n1">重複</a></p>';
+    if (markupMode === 'href-extra') content = '<p><strong id="n0">世界</strong><a href="n1" onclick="window.pwned=true">資料</a></p>';
+    if (markupMode === 'href-url') content = '<p><strong id="n0">世界</strong><a href="https://example.com/">資料</a></p>';
     if (markupMode === 'duplicate') content = '<p><strong id="n0">世界</strong><strong id="n0">世界</strong></p>';
     if (markupMode === 'parent') content = '<p><strong id="n0">世界<a id="n1">資料</a></strong></p>';
     if (markupMode === 'image') content = `<p><strong id="n0">世界</strong><a id="n1">資料</a><img src="http://${req.headers.host}/beacon"></p>`;
@@ -66,24 +74,56 @@ try {
   const errors = [];
   options.on('pageerror', error => errors.push(error.message));
   await options.goto(`chrome-extension://${id}/options.html`);
-  await options.waitForFunction(() => document.getElementById('model').value === 'plamo-3-translate-8b');
+  await options.waitForFunction(() => document.getElementById('model').value === 'plamo-3-translate');
   assert.equal(await options.locator('#targetLang option[value=en]').textContent(), '英語');
   assert.equal(requests.length, 0);
   await options.locator('#endpoint').fill(`${endpoint}/v1/`);
   await options.locator('#apiKey').fill('test-only-key');
-  assert.equal(await options.locator('#maxParallelRequests').inputValue(), '4');
+  assert.equal(await options.locator('#maxParallelRequests').inputValue(), '8');
   await options.locator('#maxParallelRequests').fill('6');
   await options.locator('#test').click();
   await options.waitForFunction(() => document.getElementById('status').textContent.includes('接続できました'), null, { timeout: 10000 }).catch(async error => {
     throw new Error(`${error.message}; status=${await options.locator('#status').textContent()}; pageErrors=${JSON.stringify(errors)}; requests=${requests.length}`);
   });
   const send = message => options.evaluate(message => chrome.runtime.sendMessage(message), message);
+  const cacheStart = requests.length;
+  await send({ type: 'translate', text: 'Cache test', targetLang: 'ja' });
+  await send({ type: 'translate', text: 'Cache test', targetLang: 'ja' });
+  assert.equal(requests.length, cacheStart + 1);
+  await send({ type: 'translate', text: 'Cache test', targetLang: 'ja', bypassCache: true });
+  assert.equal(requests.length, cacheStart + 2);
+  await options.locator('#clearCache').click();
+  await options.waitForFunction(() => document.getElementById('status').textContent.includes('キャッシュを削除しました'));
+  await send({ type: 'translate', text: 'Cache test', targetLang: 'ja' });
+  assert.equal(requests.length, cacheStart + 3);
   const page = await context.newPage();
+  const domSession = await context.newCDPSession(page);
+  async function panelNode(name) {
+    const { root } = await domSession.send('DOM.getDocument', { depth: -1, pierce: true });
+    const nodes = [root];
+    while (nodes.length) {
+      const node = nodes.pop();
+      if (node.nodeName === name) return node;
+      nodes.push(...(node.children || []), ...(node.shadowRoots || []));
+    }
+    throw new Error('Progress panel not found');
+  }
+  async function panelStatus() { return (await panelNode('P')).children?.map(child => child.nodeValue).join('') || ''; }
+  async function checkProgress(state) {
+    const attributes = (await panelNode('PROGRESS')).attributes;
+    assert.equal(Number(attributes[attributes.indexOf('max') + 1]), state.total || 1);
+    assert.equal(Number(attributes[attributes.indexOf('value') + 1]), state.done);
+    assert.equal(attributes.includes('hidden'), !state.total);
+    assert.ok(attributes.includes('翻訳の進捗'));
+  }
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(endpoint);
   const tabs = await options.evaluate(() => chrome.tabs.query({}));
   const tabId = tabs.find(tab => tab.url === `${endpoint}/`).id;
-  const action = (action, mode = 'bilingual') => send({ type: 'pageAction', tabId, action, mode, targetLang: 'ja' });
+  const action = async (action, mode = 'bilingual') => {
+    if (action === 'start') await send({ type: 'clearCache' });
+    return send({ type: 'pageAction', tabId, action, mode, targetLang: 'ja' });
+  };
   const complete = async () => {
     for (let i = 0; i < 3000; i++) {
       const result = await action('status');
@@ -96,6 +136,7 @@ try {
   const firstPageRequest = requests.length;
   assert.equal((await action('start')).ok, true);
   let state = await complete();
+  await checkProgress(state);
   assert.equal(state.errors, 0); assert.equal(state.done, state.total);
   assert.ok(await page.locator('[data-plamo-ui=translation]').count() > 5);
   assert.equal(await page.locator('#intro strong').textContent(), 'world');
@@ -124,6 +165,7 @@ try {
   assert.equal(await page.locator('#intro strong').textContent(), 'world');
   assert.equal(await page.locator('#second').textContent(), 'New application content');
   assert.equal(await page.locator('#input').getAttribute('placeholder'), 'Search the page');
+  await checkProgress((await action('status')).state);
   const sources = requests.map(request => request.messages[0].content + '\n' + (request.chat_template_kwargs.context || '')).join('\n');
   for (const excluded of ['PRIVATE FORM VALUE', 'PRIVATE PASSWORD', 'PRIVATE DRAFT', 'DO NOT SEND CODE', 'DO NOT SEND HIDDEN', 'DO NOT SEND INVISIBLE', 'DO NOT TRANSLATE', 'PRIVATE EDITOR', 'Secret placeholder']) assert.ok(!sources.includes(excluded), excluded);
   assert.ok(requests.every(request => request.chat_template_kwargs.target_lang === 'ja'));
@@ -140,6 +182,7 @@ try {
   await action('start', 'replace');
   await new Promise(resolve => setTimeout(resolve, 50));
   await action('stop'); state = await complete();
+  await checkProgress(state);
   assert.equal(state.running, false); assert.match(state.message, /中止/);
   await action('restore'); delay = 5;
   const selectionId = crypto.randomUUID();
@@ -170,18 +213,63 @@ try {
   assert.match(await page.locator('#intro').textContent(), /^詳細は資料へ。世界、こんにちは。$/);
   await action('restore');
   assert.equal(await page.locator('#intro').innerHTML(), originalIntro);
-  for (const mode of ['missing', 'attribute', 'script', 'duplicate', 'parent', 'image', 'unwrapped']) {
+  for (const mode of ['missing', 'attribute', 'script', 'duplicate', 'parent', 'image', 'unwrapped', 'href-duplicate', 'href-extra', 'href-url']) {
     markupMode = mode;
     const requestStart = requests.length;
     await action('start', 'replace'); state = await complete();
     assert.equal(state.errors, 1);
+    await checkProgress(state);
+    const panelText = await panelStatus();
+    assert.ok(panelText.includes(`翻訳完了 ${state.done} / ${state.total} 件（失敗 1 件）`), panelText);
+    if (mode === 'attribute') assert.match(state.message, /余分な属性: A#n1 \(href\)/);
+    if (mode === 'script') assert.match(state.message, /要素IDの欠落: SCRIPT/);
+    if (mode === 'parent') {
+      assert.match(state.message, /親子関係変更/);
+      await options.evaluate(id => chrome.tabs.update(id, { active: true }), tabId);
+      await popup.reload();
+      await popup.waitForFunction(state => document.getElementById('status').textContent.includes(`翻訳完了 ${state.done} / ${state.total} 件（失敗 1 件）`), state);
+    }
+    if (mode === 'missing') {
+      const beforeRepeat = requests.length;
+      await send({ type: 'pageAction', tabId, action: 'start', mode: 'replace', targetLang: 'ja' });
+      state = await complete();
+      assert.equal(state.errors, 1);
+      assert.equal(requests.slice(beforeRepeat).filter(body => body.messages[0].content.startsWith('<p>Hello')).length, 1, 'Invalid markup must not stay cached');
+    }
     assert.equal(state.done, state.total, 'A malformed paragraph must not stop the rest of the page');
     assert.equal(await page.locator('#intro').innerHTML(), originalIntro);
     assert.equal(await page.locator('[data-plamo-ui="translation"]').count(), 0);
-    assert.equal(requests.slice(requestStart).filter(body => body.messages[0].content.startsWith('<p>Hello')).length, 1, 'Do not retry malformed markup');
+    assert.equal(requests.slice(requestStart).filter(body => body.messages[0].content.startsWith('<p>Hello')).length, mode === 'missing' ? 2 : 1, 'Do not retry malformed markup');
     assert.equal(await page.evaluate(() => window.pwned), undefined);
     await action('restore');
   }
+  await page.evaluate(source => {
+    const wrapper = document.createElement('article');
+    wrapper.id = 'bolt-fixture'; wrapper.innerHTML = source;
+    wrapper.querySelector('a').href = '#bolt-docs';
+    document.body.append(wrapper);
+  }, bolt.source);
+  const boltOriginal = await page.locator('#bolt-fixture').innerHTML();
+  markupMode = 'normal';
+  await action('start', 'replace'); state = await complete();
+  assert.equal(state.errors, 0);
+  assert.match(await page.locator('#bolt-fixture').textContent(), /ポストリンクオプティマイザ/);
+  await action('restore');
+  assert.equal(await page.locator('#bolt-fixture').innerHTML(), boltOriginal);
+  markupMode = 'bolt-id-as-href';
+  await action('start', 'replace'); state = await complete();
+  assert.equal(state.errors, 0, state.message);
+  assert.match(await page.locator('#bolt-fixture').textContent(), /リンク後オプティマイザ/);
+  assert.equal(await page.locator('#bolt-fixture a').getAttribute('href'), '#bolt-docs');
+  await action('restore');
+  assert.equal(await page.locator('#bolt-fixture').innerHTML(), boltOriginal);
+  markupMode = 'bolt-parent';
+  await action('start', 'replace'); state = await complete();
+  assert.equal(state.errors, 1);
+  assert.match(state.message, /親子関係変更: n1/);
+  assert.equal(await page.locator('#bolt-fixture').innerHTML(), boltOriginal);
+  await action('restore');
+  await page.locator('#bolt-fixture').evaluate(node => node.remove());
   markupMode = 'reorder';
   await action('start', 'replace'); await complete();
   await page.evaluate(() => { window.originalStrongText.data = 'Updated by application'; });
@@ -189,6 +277,40 @@ try {
   await action('restore');
   assert.equal(await page.locator('#intro strong').textContent(), 'Updated by application');
   markupMode = 'normal';
+  await page.reload();
+  await page.evaluate(() => {
+    const section = document.createElement('section'); section.id = 'grouped';
+    section.innerHTML = '<h2>Grouped heading</h2><div><p>Grouped context one with <a href="#one">a link</a>.</p><p>Grouped context two refers to the first.</p></div>';
+    document.body.append(section);
+    window.groupedLink = section.querySelector('a');
+    window.groupedParagraphs = [...section.querySelectorAll('p')];
+    const large = document.createElement('div'); large.id = 'large-group';
+    for (const name of ['LongAlpha', 'LongBeta']) {
+      const child = document.createElement('div');
+      for (let i = 0; i < 2; i++) {
+        const p = document.createElement('p'); p.textContent = name + ' text '.repeat(300);
+        child.append(p);
+      }
+      large.append(child);
+    }
+    document.body.append(large);
+  });
+  const groupedOriginal = await page.locator('#grouped').innerHTML();
+  const largeOriginal = await page.locator('#large-group').innerHTML();
+  const beforeGrouping = requests.length;
+  await action('start', 'replace'); state = await complete();
+  assert.equal(state.errors, 0, state.message);
+  const groupedRequests = requests.slice(beforeGrouping).filter(body => body.messages[0].content.includes('Grouped context'));
+  assert.equal(groupedRequests.length, 1, 'A fitting section must be translated as one source');
+  assert.ok(groupedRequests[0].messages[0].content.includes('Grouped context one') && groupedRequests[0].messages[0].content.includes('Grouped context two'));
+  assert.ok(groupedRequests[0].messages[0].content.includes('<h2 id='));
+  assert.ok(await page.evaluate(() => window.groupedLink === document.querySelector('#grouped a') && window.groupedParagraphs.every(p => p.isConnected)));
+  const largeRequests = requests.slice(beforeGrouping).filter(body => /LongAlpha|LongBeta/.test(body.messages[0].content));
+  assert.equal(largeRequests.length, 2, 'An oversized container must split into fitting child containers');
+  for (const body of [...groupedRequests, ...largeRequests]) assert.ok(new TextEncoder().encode(body.messages[0].content).length <= 6000);
+  await action('restore');
+  assert.equal(await page.locator('#grouped').innerHTML(), groupedOriginal);
+  assert.equal(await page.locator('#large-group').innerHTML(), largeOriginal);
   await page.reload();
   assert.equal(unexpectedResources, 0, 'Rejected markup must not fetch resources during parsing');
   if (process.env.PLAMO_LLVM_TEST === '1') {

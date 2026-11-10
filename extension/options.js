@@ -13,13 +13,19 @@ async function save(test) {
     await rpc({ type: 'saveSettings', settings });
     if (!test) { status('設定を保存しました。'); return; }
     status('接続テスト中…');
-    const result = await rpc({ type: 'translate', text: 'This system uses a GPU for fast translation.', targetLang: settings.targetLang });
+    const result = await rpc({ type: 'translate', bypassCache: true, text: 'This system uses a GPU for fast translation.', targetLang: settings.targetLang });
     status(`接続できました。\n${result.text}`);
   } catch (error) { status(error.message, true); }
   finally { $('save').disabled = $('test').disabled = false; }
 }
 $('form').addEventListener('submit', event => { event.preventDefault(); save(false); });
 $('test').addEventListener('click', () => { if ($('form').reportValidity()) save(true); });
+$('clearCache').addEventListener('click', async () => {
+  $('clearCache').disabled = true;
+  try { await rpc({ type: 'clearCache' }); status('翻訳キャッシュを削除しました。'); }
+  catch (error) { status(error.message, true); }
+  finally { $('clearCache').disabled = false; }
+});
 try {
   const { settings } = await rpc({ type: 'settings' });
   for (const key of Object.keys(DEFAULTS)) $(key).value = settings[key];

@@ -1,10 +1,10 @@
 export const DEFAULTS = Object.freeze({
   endpoint: 'https://llm.keioaic.dev/v1',
   apiKey: '',
-  model: 'plamo-3-translate-8b',
+  model: 'plamo-3-translate',
   targetLang: 'ja',
   mode: 'bilingual',
-  maxParallelRequests: '4',
+  maxParallelRequests: '8',
 });
 export const LANGUAGES = {
   ja: '日本語', en: '英語', 'zh-hans': '中国語（簡体字）', 'zh-hant': '中国語（繁体字）',

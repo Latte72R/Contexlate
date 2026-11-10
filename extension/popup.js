@@ -5,7 +5,7 @@ let tabId, timer, busy = false, running = false, actionError = false;
 function showStatus(state) {
   if (actionError) return;
   running = state.running;
-  $('status').textContent = state.message || (state.total ? `${state.running ? '翻訳中' : '翻訳完了'} ${state.done} / ${state.total} 件${state.errors ? `（失敗 ${state.errors} 件）` : ''}` : '');
+  $('status').textContent = (state.message ? state.message + '\n' : '') + (state.total ? `${state.running ? '翻訳中' : '翻訳完了'} ${state.done} / ${state.total} 件${state.errors ? `（失敗 ${state.errors} 件）` : ''}` : '');
   $('status').classList.toggle('error', !!state.errors);
   $('translate').disabled = busy || state.running;
   $('stop').disabled = !state.running;

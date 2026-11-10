@@ -27,6 +27,7 @@ test('only extension pages may access secrets or change settings', async () => {
   assert.deepEqual(Object.keys(publicSettings).sort(), ['mode', 'targetLang']);
   assert.equal((await send({ type: 'saveSettings', settings: value }, untrusted)).ok, false);
   assert.equal((await send({ type: 'settings' })).settings.apiKey, value.apiKey);
+  assert.equal((await send({ type: 'clearCache' }, untrusted)).ok, false);
 });
 test('context menu is selection-only and opens an extension popup with one-time text', async () => {
   listeners.installed();

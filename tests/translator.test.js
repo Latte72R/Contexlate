@@ -7,7 +7,7 @@ const json = (text = '翻訳結果', finish_reason = 'stop') => Response.json({ 
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 
 test('settings validate endpoint, languages, and avoid credentials in URL', () => {
-  assert.equal(validateSettings(config).model, 'plamo-3-translate-8b');
+  assert.equal(validateSettings(config).model, 'plamo-3-translate');
   for (const endpoint of ['file:///tmp/a', 'https://user:secret@example.com/v1/chat/completions', 'https://example.com/invalid', 'https://example.com/v1?key=secret']) {
     assert.throws(() => validateSettings({ ...config, endpoint }));
   }
@@ -89,7 +89,7 @@ test('errors never leak server bodies or key; truncation is rejected', async () 
   const translator = new Translator(async () => new Response('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n', { headers: { 'content-type': 'text/event-stream' } }));
   await assert.rejects(translator.translate('Hello', config, 'a'), /途中/);
 });
-test('a global four-request limit applies across owners', async () => {
+test('a global eight-request limit applies across owners', async () => {
   let active = 0, maximum = 0;
   const translator = new Translator(async () => {
     active++; maximum = Math.max(maximum, active);
@@ -97,7 +97,7 @@ test('a global four-request limit applies across owners', async () => {
     active--; return json();
   });
   await Promise.all(Array.from({ length: 13 }, (_, i) => translator.translate(`Text ${i}`, config, `owner-${i}`)));
-  assert.equal(maximum, 4);
+  assert.equal(maximum, 8);
   assert.equal(translator.active, 0);
   assert.equal(translator.tasks.size, 0);
 });
@@ -112,7 +112,7 @@ test('cancel removes queued work, aborts active work, and frees slots', async ()
   await tick(); translator.cancel('a');
   const results = await settled;
   assert.ok(results.every(result => result.status === 'rejected'));
-  assert.equal(fetched, 4);
+  assert.equal(fetched, 8);
   assert.equal(translator.active, 0);
   assert.equal(translator.queue.length, 0);
   translator.fetch = async () => json('works again');
@@ -126,7 +126,7 @@ test('long translation preserves separators and requires a key', async () => {
 });
 
 test('parallel setting defaults for existing installs and rejects invalid limits', () => {
-  assert.equal(validateSettings({}).maxParallelRequests, '4');
+  assert.equal(validateSettings({}).maxParallelRequests, '8');
   for (const value of ['0', '65', '1.5', '', '-1', 'NaN']) {
     assert.throws(() => validateSettings({ ...config, maxParallelRequests: value }), /並列/);
   }
@@ -160,4 +160,44 @@ test('global concurrency changes drain queued work and allow active requests to 
   await pending;
   assert.equal(translator.active, 0);
   assert.equal(translator.queue.length, 0);
+});
+
+test('429 retries automatically, honors Retry-After, and keeps the concurrency slot', async () => {
+  const { retryDelay } = await import('../extension/translator.js');
+  assert.equal(retryDelay('2', 0), 2000);
+  assert.equal(retryDelay('Wed, 01 Jan 2025 00:00:03 GMT', 0, Date.parse('2025-01-01T00:00:00Z')), 3000);
+  assert.equal(retryDelay(null, 2), 8000);
+  assert.equal(retryDelay('invalid', 1), 4000);
+  let calls = 0;
+  const translator = new Translator(async () => {
+    calls++;
+    assert.equal(translator.active, 1);
+    return calls < 3 ? new Response('', { status: 429, headers: { 'Retry-After': '0' } }) : json();
+  });
+  assert.equal(await translator.translate('Hello', config, 'a'), '翻訳結果');
+  assert.equal(calls, 3);
+  assert.equal(translator.active, 0);
+});
+test('429 retry budget is bounded and cooldown is shared and cancellable', async () => {
+  let calls = 0;
+  const translator = new Translator(async () => {
+    calls++;
+    return new Response('', { status: 429, headers: { 'Retry-After': '0' } });
+  });
+  await assert.rejects(translator.translate('Hello', config, 'a'), /5回の自動再試行/);
+  assert.equal(calls, 6);
+  translator.fetch = async () => {
+    calls++;
+    return new Response('', { status: 429, headers: { 'Retry-After': '60' } });
+  };
+  const a = assert.rejects(translator.translate('Again', config, 'a'), /中止/);
+  await tick();
+  const before = calls;
+  const b = assert.rejects(translator.translate('Other tab', config, 'b'), /中止/);
+  await tick();
+  assert.equal(calls, before, 'New requests must respect the shared cooldown');
+  translator.cancel('a'); translator.cancel('b');
+  await Promise.all([a, b]);
+  assert.equal(translator.active, 0);
+  assert.equal(translator.tasks.size, 0);
 });

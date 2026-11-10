@@ -1,7 +1,10 @@
 import { DEFAULTS, validateSettings, originPattern } from './shared.js';
 import { Translator, CHUNK_SIZE } from './translator.js';
 
-const translator = new Translator();
+import { TranslationCache, translationCacheKey } from './cache.js';
+
+const cache = new TranslationCache(chrome.storage.local);
+const translator = new Translator(undefined, cache);
 const storageReady = chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
 const extensionOrigin = chrome.runtime.getURL('');
 const isExtensionPage = sender => sender.url?.startsWith(extensionOrigin);
@@ -12,14 +15,14 @@ async function settings() {
   translator.setConcurrency(Number(config.maxParallelRequests));
   return config;
 }
-async function translate(text, targetLang, owner, context) {
+async function translate(text, targetLang, owner, context, useCache) {
   const config = await settings();
   if (targetLang !== undefined) config.targetLang = targetLang;
   validateSettings(config);
   if (!await chrome.permissions.contains({ origins: [originPattern(config.endpoint)] })) {
     throw new Error('設定画面で API 接続先へのアクセスを許可してください。');
   }
-  return translator.translate(text, config, owner, context);
+  return translator.translate(text, config, owner, context, useCache);
 }
 async function handle(message, sender) {
   const trusted = isExtensionPage(sender);
@@ -39,7 +42,19 @@ async function handle(message, sender) {
       translator.setConcurrency(Number(config.maxParallelRequests));
       return {};
     }
-    case 'translate': return { text: await translate(message.text, message.targetLang, owner, message.context) };
+    case 'translate': return { text: await translate(message.text, message.targetLang, owner, message.context, !(trusted && message.bypassCache === true)) };
+    case 'forgetTranslation': {
+      const config = await settings();
+      if (message.targetLang !== undefined) config.targetLang = message.targetLang;
+      validateSettings(config);
+      await cache.delete(await translationCacheKey(message.text, config, message.context));
+      return {};
+    }
+    case 'clearCache':
+      if (!trusted) throw new Error('設定画面から操作してください。');
+      await storageReady;
+      await cache.clear();
+      return {};
     case 'cancel': translator.cancel(owner); return {};
     case 'pageAction': {
       if (!trusted || !Number.isInteger(message.tabId)) throw new Error('拡張のポップアップから操作してください。');
@@ -76,7 +91,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 });
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: 'plamo-selection', title: 'PLaMo で選択部分を翻訳', contexts: ['selection'] });
+    chrome.contextMenus.create({ id: 'plamo-selection', title: 'Contexlate で選択部分を翻訳', contexts: ['selection'] });
   });
 });
 chrome.contextMenus.onClicked.addListener((info) => {

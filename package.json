@@ -1,6 +1,6 @@
 {
-  "name": "plamo-page-translator",
-  "version": "1.0.6",
+  "name": "contexlate",
+  "version": "1.0.12",
   "private": true,
   "type": "module",
   "scripts": {

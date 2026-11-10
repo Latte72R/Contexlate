@@ -28,6 +28,7 @@
     return element;
   }
   const INLINE = new Set(['A', 'B', 'STRONG', 'EM', 'I', 'SPAN', 'SMALL', 'SUP', 'SUB', 'U', 'S', 'DEL', 'INS', 'ABBR', 'ACRONYM', 'CITE', 'Q', 'MARK', 'TIME', 'TT', 'FONT', 'BDI', 'BDO', 'BR', 'WBR', 'IMG']);
+  const BLOCK = new Set(['P', 'DIV', 'SECTION', 'ARTICLE', 'MAIN', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'LI', 'DL', 'DT', 'DD', 'BLOCKQUOTE']);
   function snapshot(parents) {
     return parents.map(node => ({ node, children: [...node.childNodes].map(child => ({ node: child, text: child.nodeType === 3 ? child.data : null })) }));
   }
@@ -36,7 +37,7 @@
   }
   function markupFor(unit, limit) {
     const elements = [...unit.node.querySelectorAll('*')];
-    if (!elements.length || elements.some(node => !INLINE.has(node.tagName) || !visible(node))) return null;
+    if (!elements.length || elements.some(node => (!INLINE.has(node.tagName) && !BLOCK.has(node.tagName)) || !visible(node))) return null;
     const texts = new Set(unit.nodes);
     const encode = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
     function serialize(node) {
@@ -77,10 +78,28 @@
       offset += block.text.length + 2;
     }
     if (mode === 'bilingual') return blocks.map(unit => ({ ...unit, context: contexts.get(unit.node) }));
+    const batches = [], covered = new Set();
+    for (const block of blocks) {
+      if (covered.has(block.node)) continue;
+      let batch = block;
+      for (let parent = block.node.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+        if (!['DIV', 'SECTION', 'ARTICLE', 'MAIN', 'UL', 'OL', 'DL', 'BLOCKQUOTE'].includes(parent.tagName)) break;
+        const members = blocks.filter(unit => parent.contains(unit.node));
+        if (members.some(unit => covered.has(unit.node))) break;
+        if (members.length < 2) continue;
+        const nodes = [...groups].filter(([node]) => parent.contains(node)).flatMap(([, nodes]) => nodes);
+        const candidate = { node: parent, nodes, originals: nodes.map(node => node.data), text: members.map(unit => unit.text).join('\n\n') };
+        const markup = markupFor(candidate, sourceByteLimit);
+        if (!markup) break;
+        batch = { ...candidate, markup };
+      }
+      batches.push(batch);
+      for (const unit of blocks) if (batch.node.contains(unit.node)) covered.add(unit.node);
+    }
     const units = [];
-    for (const unit of blocks) {
-      const context = contexts.get(unit.node);
-      const markup = markupFor(unit, sourceByteLimit);
+    for (const unit of batches) {
+      const context = contexts.get(unit.node) || `${document.title}\n\n${unit.text}\n\n${contexts.get(blocks.find(block => unit.node.contains(block.node)).node)}`;
+      const markup = unit.markup || markupFor(unit, sourceByteLimit);
       if (markup) units.push({ ...unit, text: markup.text, markup, context });
       else if (!unit.node.children.length) units.push({ ...unit, context });
       else {
@@ -102,29 +121,42 @@
     return units;
   }
   function applyMarkup(unit, text) {
-    const fail = () => { const error = new Error('訳文のリンク・装飾を安全に対応づけられないため、この段落は原文を残しました。'); error.keepGoing = true; throw error; };
+    const fail = reason => { const error = new Error(`訳文のリンク・装飾を安全に対応づけられないため、この段落は原文を残しました。（${reason}）`); error.keepGoing = true; throw error; };
     const markup = unit.markup;
     const source = text.trim().replace(/^```(?:html)?\s*\n([\s\S]*?)\n```$/i, '$1');
     // Parse in an unmounted template so even rejected image/resource URLs cannot load.
     const template = document.createElement('template');
     template.innerHTML = source;
     const fragment = template.content, root = fragment.firstElementChild;
-    if (fragment.children.length !== 1 || root?.tagName.toLowerCase() !== markup.tag || root.attributes.length || [...fragment.childNodes].some(node => node.nodeType === 3 && node.data.trim())) fail();
+    if (fragment.children.length !== 1 || root?.tagName.toLowerCase() !== markup.tag || root.attributes.length || [...fragment.childNodes].some(node => node.nodeType === 3 && node.data.trim())) fail('外側のタグが不一致');
     const seen = new Set();
     function validate(parent) {
       for (const child of parent.childNodes) {
         if (child.nodeType === 3) continue;
-        if (child.nodeType !== 1 || child.attributes.length !== 1 || !/^n\d+$/.test(child.id)) fail();
+        if (child.nodeType !== 1) fail(`予期しないノード: ${child.nodeName}`);
+        // PLaMo sometimes writes an anchor's synthetic ID as href="n1".
+        if (child.tagName === 'A' && !child.hasAttribute('id') && child.attributes.length === 1 && /^n\d+$/.test(child.getAttribute('href') || '')) {
+          const id = child.getAttribute('href');
+          if (markup.elements[Number(id.slice(1))]?.tagName === 'A') {
+            child.removeAttribute('href');
+            child.id = id;
+          }
+        }
+        if (!child.id) fail(`要素IDの欠落: ${child.tagName}`);
+        if (!/^n\d+$/.test(child.id)) fail(`不正な要素ID: ${child.tagName}#${child.id.slice(0, 40)}`);
+        if (child.attributes.length !== 1) fail(`余分な属性: ${child.tagName}#${child.id} (${[...child.attributes].filter(attribute => attribute.name !== 'id').map(attribute => attribute.name).join(', ')})`);
         const index = Number(child.id.slice(1)), original = markup.elements[index];
-        if (!original || seen.has(index) || original.tagName !== child.tagName) fail();
+        if (!original) fail(`未知の要素ID: ${child.id}`);
+        if (seen.has(index)) fail(`要素IDの重複: ${child.id}`);
+        if (original.tagName !== child.tagName) fail(`タグ変更: ${child.id} (${original.tagName} → ${child.tagName})`);
         const originalParent = original.parentElement;
         const expectedParent = child.parentElement === root ? unit.node : markup.elements[Number(child.parentElement.id.slice(1))];
-        if (originalParent !== expectedParent) fail();
+        if (originalParent !== expectedParent) fail(`親子関係変更: ${child.id}`);
         seen.add(index); validate(child);
       }
     }
     validate(root);
-    if (seen.size !== markup.elements.length) fail();
+    if (seen.size !== markup.elements.length) fail(`要素IDの欠落: ${markup.elements.map((_, i) => i).filter(i => !seen.has(i)).map(i => 'n' + i).join(', ')}`);
     if (!unchanged(markup.before)) return;
     function children(parent, liveParent) {
       const texts = [...liveParent.childNodes].filter(node => node.nodeType === 3);
@@ -149,21 +181,27 @@
     panel.style.cssText = 'all:initial!important;position:fixed!important;left:20px!important;bottom:20px!important;z-index:2147483647!important;display:block!important;';
     ui = panel.attachShadow({ mode: 'closed' });
     const style = document.createElement('style');
-    style.textContent = ':host{color-scheme:light}section{font:14px/1.5 system-ui,sans-serif;background:#fff;color:#20302c;border:1px solid #c7d7ce;border-radius:12px;box-shadow:0 6px 25px #0002;padding:14px 16px;width:300px;max-width:calc(100vw - 72px)}strong{font-size:13px;color:#23624d}p{margin:6px 0 10px;overflow-wrap:anywhere}nav{display:flex;gap:8px}button{font:inherit;border:1px solid #c7d7ce;background:#f4f7f4;border-radius:6px;color:#20302c;padding:5px 10px;cursor:pointer}button:focus-visible{outline:3px solid #23624d}button:disabled{opacity:.5;cursor:default}';
+    style.textContent = ':host{color-scheme:light}section{font:14px/1.5 system-ui,sans-serif;background:#fff;color:#20302c;border:1px solid #c7d7ce;border-radius:12px;box-shadow:0 6px 25px #0002;padding:14px 16px;width:300px;max-width:calc(100vw - 72px)}strong{font-size:13px;color:#23624d}p{margin:6px 0 10px;overflow-wrap:anywhere}progress{width:100%;height:8px;margin:0 0 12px;accent-color:#23624d}nav{display:flex;gap:8px}button{font:inherit;border:1px solid #c7d7ce;background:#f4f7f4;border-radius:6px;color:#20302c;padding:5px 10px;cursor:pointer}button:focus-visible{outline:3px solid #23624d}button:disabled{opacity:.5;cursor:default}';
     const section = document.createElement('section');
-    section.setAttribute('aria-label', 'PLaMo 翻訳');
-    const heading = document.createElement('strong'); heading.textContent = 'PLaMo Translate';
+    section.setAttribute('aria-label', 'Contexlate 翻訳');
+    const heading = document.createElement('strong'); heading.textContent = 'Contexlate';
     const status = document.createElement('p'); status.id = 'status'; status.setAttribute('role', 'status');
+    const progress = document.createElement('progress'); progress.id = 'progress';
+    progress.setAttribute('aria-label', '翻訳の進捗'); progress.setAttribute('aria-describedby', 'status');
     const nav = document.createElement('nav');
     for (const [label, action, id] of [['中止', stop, 'stop'], ['原文に戻す', restore, 'restore'], ['閉じる', () => panel.remove(), 'close']]) {
       const button = document.createElement('button'); button.textContent = label; button.id = id;
       button.addEventListener('click', action); nav.append(button);
     }
-    section.append(heading, status, nav); ui.append(style, section); document.documentElement.append(panel);
+    section.append(heading, status, progress, nav); ui.append(style, section); document.documentElement.append(panel);
   }
   function update() {
     ensurePanel();
-    ui.getElementById('status').textContent = state.message || `${state.running ? '翻訳中' : '翻訳完了'} ${state.done} / ${state.total} 件${state.errors ? `（失敗 ${state.errors} 件）` : ''}`;
+    ui.getElementById('status').textContent = (state.message ? state.message + '\n' : '') + `${state.running ? '翻訳中' : '翻訳完了'} ${state.done} / ${state.total} 件${state.errors ? `（失敗 ${state.errors} 件）` : ''}`;
+    const progress = ui.getElementById('progress');
+    progress.hidden = !state.total;
+    progress.max = state.total || 1;
+    progress.value = state.done;
     ui.getElementById('stop').disabled = !state.running;
   }
   function stop() {
@@ -226,7 +264,7 @@
       additions.push(translation);
     }
   }
-  async function start(mode, targetLang, sourceByteLimit, maxParallelRequests = 4) {
+  async function start(mode, targetLang, sourceByteLimit, maxParallelRequests = 8) {
     if (!['bilingual', 'replace'].includes(mode) || typeof targetLang !== 'string') throw new Error('表示方法と言語を選んでください。');
     restore();
     const current = generation;
@@ -258,7 +296,9 @@
           if (current !== generation) return;
           state.errors++;
           state.done++;
-          state.message = `${error.message}（${state.done} / ${state.total} 件、失敗 ${state.errors} 件）`;
+          state.message = error.message;
+          if (error.keepGoing) await rpc({ type: 'forgetTranslation', text: unit.text, targetLang, context: unit.context }).catch(() => {});
+          if (current !== generation) return;
           // Stop scheduling after an API failure; already completed translations remain restorable.
           if (!error.keepGoing) index = units.length;
         }

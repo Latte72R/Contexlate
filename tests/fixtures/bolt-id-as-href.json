@@ -1,0 +1,4 @@
+{
+  "source": "<p>The <b id=\"n0\"> <a id=\"n1\">BOLT</a></b> project is a post-link optimizer. It achieves the improvements by optimizing application's code layout based on execution profile gathered by sampling profiler.</p>",
+  "translation": "<p><b id=\"n0\"><a href=\"n1\">BOLT</a></b>プロジェクトは、リンク後オプティマイザです。サンプリングプロファイラで収集した実行プロファイルに基づき、アプリケーションのコードレイアウトを最適化することで性能向上を実現します。</p>"
+}

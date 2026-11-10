@@ -1,3 +1,6 @@
+import { DEFAULTS } from './shared.js';
+import { translationCacheKey } from './cache.js';
+
 export const CHUNK_SIZE = 6000;
 export const INPUT_BYTE_LIMIT = 14000;
 export function clipUtf8(text, limit) {
@@ -76,12 +79,32 @@ async function readTranslation(response) {
   return output;
 }
 
+export function retryDelay(header, attempt, now = Date.now()) {
+  if (header?.trim()) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+    const date = Date.parse(header);
+    if (Number.isFinite(date)) return Math.max(0, date - now);
+  }
+  return 2000 * 2 ** attempt;
+}
+
+function wait(ms, signal) {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const abort = () => { clearTimeout(timer); reject(signal.reason); };
+    const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, ms);
+    signal.addEventListener('abort', abort, { once: true });
+  });
+}
+
 export class Translator {
   active = 0;
-  concurrency = 4;
+  concurrency = Number(DEFAULTS.maxParallelRequests);
   queue = [];
+  retryUntil = 0;
   tasks = new Set();
-  constructor(fetchImpl = fetch.bind(globalThis)) { this.fetch = fetchImpl; }
+  constructor(fetchImpl = fetch.bind(globalThis), cache = null) { this.fetch = fetchImpl; this.cache = cache; }
   setConcurrency(limit) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 64) throw new Error('並列アクセス数は 1〜64 の整数で指定してください。');
     this.concurrency = limit;
@@ -96,14 +119,19 @@ export class Translator {
   cancel(owner) {
     for (const task of this.tasks) if (task.owner === owner) task.controller.abort();
   }
-  async translate(text, settings, owner, context = '') {
+  async translate(text, settings, owner, context = '', useCache = true) {
     if (typeof text !== 'string' || !text.trim() || text.length > 100000) throw new Error('翻訳する文字数は 1〜100,000 文字にしてください。');
     if (typeof context !== 'string' || context.length > 100000) throw new Error('翻訳の参照文脈が不正です。');
     if (!settings.apiKey) throw new Error('設定画面で API キーを保存してください。');
     const task = { owner, controller: new AbortController() };
     this.tasks.add(task);
     let result = '';
+    const cache = useCache ? this.cache : null, generation = cache?.generation;
     try {
+      const key = cache ? await translationCacheKey(text, settings, context) : null;
+      const cached = cache ? await cache.get(key).catch(() => undefined) : undefined;
+      task.controller.signal.throwIfAborted();
+      if (cached !== undefined) return cached;
       for (const chunk of splitText(text)) {
         task.controller.signal.throwIfAborted();
         const translated = await this.run(chunk, settings, task.controller.signal, context || (chunk !== text ? text : ''));
@@ -111,6 +139,8 @@ export class Translator {
         if (result && !/\s$/u.test(result) && !leading) result += '\n';
         result += leading + translated.trim() + trailing;
       }
+      task.controller.signal.throwIfAborted();
+      if (cache && cache.generation === generation) await cache.set(key, result).catch(() => {});
       return result;
     } catch (error) {
       if (task.controller.signal.aborted) throw new Error('翻訳を中止しました。');
@@ -126,6 +156,23 @@ export class Translator {
         signal.addEventListener('abort', abort, { once: true });
       });
     } else { this.active++; }
+    try {
+      for (let attempt = 0; ; attempt++) {
+        while (this.retryUntil > Date.now()) await wait(Math.min(60000, this.retryUntil - Date.now()), signal);
+        signal.throwIfAborted();
+        try { return await this.request(text, settings, signal, context); }
+        catch (error) {
+          if (!error.rateLimited) throw error;
+          this.retryUntil = Math.max(this.retryUntil, Date.now() + retryDelay(error.retryAfter, attempt));
+          if (attempt >= 5) throw new Error('API エラー (429)。混雑が続いているため、5回の自動再試行後に翻訳を停止しました。');
+        }
+      }
+    } finally {
+      this.active--;
+      this.drain();
+    }
+  }
+  async request(text, settings, signal, context) {
     let headerTimer, timeout;
     const controller = new AbortController();
     const abort = () => controller.abort();
@@ -145,9 +192,11 @@ export class Translator {
       });
       clearTimeout(headerTimer);
       if (!response.ok) {
-        const hint = { 401: 'API キーを確認してください。', 403: 'API のアクセス権を確認してください。', 429: '混雑しています。しばらく待って再試行してください。', 503: 'モデルが起動中、または利用できません。' }[response.status] || '接続先とモデル名を確認してください。';
+        const hint = { 401: 'API キーを確認してください。', 403: 'API のアクセス権を確認してください。', 503: 'モデルが起動中、または利用できません。' }[response.status] || '接続先とモデル名を確認してください。';
         await response.body?.cancel();
-        throw new Error(`API エラー (${response.status})。${hint}`);
+        const error = new Error(`API エラー (${response.status})。${hint}`);
+        if (response.status === 429) { error.rateLimited = true; error.retryAfter = response.headers.get('retry-after'); }
+        throw error;
       }
       return await readTranslation(response);
     } catch (error) {
@@ -157,8 +206,6 @@ export class Translator {
     } finally {
       clearTimeout(headerTimer); clearTimeout(timeout);
       signal.removeEventListener('abort', abort);
-      this.active--;
-      this.drain();
     }
   }
 }
