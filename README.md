@@ -1,5 +1,7 @@
 # Contexlate
 
+![](./contexlate.png)
+
 PLaMo 3 Translate 向けの Chrome 拡張です。  
 OpenAI 互換 API を使い、前後の文脈を参照して Web ページを翻訳します。
 

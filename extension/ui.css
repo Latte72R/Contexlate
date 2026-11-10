@@ -106,6 +106,15 @@ footer p { margin: 0 0 12px; }
 .legal { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 13px; line-height: 20px; }
 .legal a { color: var(--muted); }
 [hidden] { display: none !important; }
+.options { font-size: 16.64px; }
+.options .brand img { width: 35.2px; height: 35.2px; }
+.options .wordmark { font-size: 24.2px; }
+.options .page-heading { font-size: 29.12px; }
+.options input[type=password], .options .technical { font-size: 15.6px !important; }
+.options .help, .options .note, .options footer { font-size: 14.56px; }
+.options .settings-group > legend { font-size: 18.72px; }
+.options .status { font-size: 15.6px; }
+.options .legal { font-size: 13.52px; }
 @media (prefers-reduced-motion: no-preference) {
   button, .mode { transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out; }
 }
